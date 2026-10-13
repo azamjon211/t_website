@@ -1,0 +1,551 @@
+/* ==========================================================================
+   Avatars with photos + story rings
+   ========================================================================== */
+.avatar img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.avatar.story-unseen,
+.avatar.story-seen {
+    cursor: pointer;
+    isolation: isolate;
+    box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--ring, #c4c9cc);
+}
+
+.avatar.story-unseen {
+    --ring: transparent;
+}
+
+.avatar.story-unseen::before {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    z-index: -1;
+    border-radius: 50%;
+    background: conic-gradient(from 200deg, #34c76f, #3390ec, #8774e1, #34c76f);
+}
+
+.chat-item .avatar.story-unseen,
+.chat-item .avatar.story-seen {
+    margin: 4px;
+    width: 48px;
+    height: 48px;
+}
+
+.chat-item.active .avatar.story-seen,
+.chat-item.active .avatar.story-unseen {
+    box-shadow: 0 0 0 2px var(--active), 0 0 0 4px var(--ring, #ffffff);
+}
+
+/* ---------- Stories strip ---------- */
+.stories {
+    display: flex;
+    gap: 4px;
+    padding: 6px 12px 10px;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border);
+    scrollbar-width: none;
+}
+
+.stories::-webkit-scrollbar {
+    display: none;
+}
+
+.story-item {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 72px;
+    padding: 6px 0 0;
+    border: 0;
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.story-item .avatar {
+    width: 56px;
+    height: 56px;
+}
+
+.story-item-name {
+    max-width: 68px;
+    overflow: hidden;
+    font-size: 12px;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.story-add {
+    position: absolute;
+    top: 46px;
+    left: 48px;
+    z-index: 1;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--surface);
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 18px;
+    text-align: center;
+}
+
+/* ==========================================================================
+   Modals (profile, story composer)
+   ========================================================================== */
+.modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(0, 0, 0, .45);
+    animation: fade .15s ease-out;
+}
+
+.modal {
+    width: 100%;
+    max-width: 400px;
+    max-height: 100%;
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 12px 20px 20px;
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: var(--menu-shadow);
+    animation: pop .15s ease-out;
+}
+
+.modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+
+.modal-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.profile-avatar-wrap {
+    position: relative;
+    width: 128px;
+    height: 128px;
+    margin: 8px auto 12px;
+}
+
+.avatar.profile-avatar {
+    width: 128px;
+    height: 128px;
+    border: 0;
+    font-size: 44px;
+    cursor: pointer;
+}
+
+.profile-avatar-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, .35);
+    color: #fff;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .15s;
+}
+
+.profile-avatar-overlay svg {
+    width: 40px;
+    height: 40px;
+}
+
+.profile-avatar-wrap:hover .profile-avatar-overlay {
+    opacity: 1;
+}
+
+.upload-ring {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, .45);
+}
+
+.profile-actions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 20px;
+}
+
+.btn-ghost {
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--accent);
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-ghost:hover {
+    background: var(--hover);
+}
+
+.btn-ghost.danger {
+    color: var(--danger);
+}
+
+.profile-form {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.profile-form .field input,
+.profile-form .field span {
+    background: var(--surface);
+}
+
+.profile-username {
+    color: var(--text-2);
+    font-size: 14px;
+}
+
+.profile-username b {
+    color: var(--text);
+}
+
+.btn-primary:disabled {
+    opacity: .6;
+    cursor: default;
+}
+
+.story-composer .btn-primary {
+    width: 100%;
+}
+
+.story-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: min(56vh, 480px);
+    border-radius: 12px;
+    background: #000;
+    overflow: hidden;
+}
+
+.story-preview img,
+.story-preview video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.story-caption-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+    outline: none;
+}
+
+.story-caption-input:focus {
+    border-color: var(--accent);
+}
+
+/* ==========================================================================
+   Story viewer
+   ========================================================================== */
+.story-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 65;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 10, 10, .96);
+    animation: fade .15s ease-out;
+}
+
+.story-stage {
+    position: relative;
+    width: min(100vw, calc(100dvh * 9 / 16));
+    height: min(100dvh, calc(100vw * 16 / 9));
+    overflow: hidden;
+    background: #000;
+    color: #fff;
+    user-select: none;
+}
+
+@media (min-width: 769px) {
+    .story-stage {
+        height: calc(100dvh - 40px);
+        width: calc((100dvh - 40px) * 9 / 16);
+        border-radius: 14px;
+    }
+}
+
+.story-bars {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 3;
+    display: flex;
+    gap: 4px;
+}
+
+.story-bar {
+    flex: 1;
+    height: 3px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, .35);
+    overflow: hidden;
+}
+
+.story-bar div {
+    height: 100%;
+    background: #fff;
+}
+
+.story-top {
+    position: absolute;
+    top: 14px;
+    left: 0;
+    right: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 6px 24px 12px;
+    background: linear-gradient(rgba(0, 0, 0, .45), transparent);
+}
+
+.story-top .avatar {
+    width: 38px;
+    height: 38px;
+    font-size: 15px;
+}
+
+.story-who {
+    flex: 1;
+    min-width: 0;
+}
+
+.story-name {
+    overflow: hidden;
+    font-weight: 600;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.story-time {
+    font-size: 13px;
+    opacity: .8;
+}
+
+.story-top .icon-btn,
+.story-reply .icon-btn {
+    color: #fff;
+}
+
+.story-top .icon-btn:hover,
+.story-reply .icon-btn:hover {
+    background: rgba(255, 255, 255, .12);
+}
+
+.story-media {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.story-media img,
+.story-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.story-tap {
+    position: absolute;
+    top: 80px;
+    bottom: 80px;
+    z-index: 2;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.story-tap-prev {
+    left: 0;
+    width: 35%;
+}
+
+.story-tap-next {
+    right: 0;
+    width: 65%;
+}
+
+.story-caption {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 64px;
+    z-index: 3;
+    padding: 24px 16px 8px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, .6));
+    font-size: 15px;
+    line-height: 1.35;
+    text-align: center;
+    white-space: pre-wrap;
+    pointer-events: none;
+}
+
+.story-bottom {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 64px;
+    padding: 8px 12px calc(8px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+}
+
+.story-views-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, .15);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.story-views-btn svg {
+    width: 20px;
+    height: 20px;
+}
+
+.story-reply {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+}
+
+.story-reply input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 16px;
+    border: 1px solid rgba(255, 255, 255, .35);
+    border-radius: 22px;
+    background: rgba(0, 0, 0, .3);
+    color: #fff;
+    font: inherit;
+    outline: none;
+}
+
+.story-reply input::placeholder {
+    color: rgba(255, 255, 255, .7);
+}
+
+.story-viewers-panel {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    max-height: 60%;
+    border-radius: 16px 16px 0 0;
+    background: var(--surface);
+    color: var(--text);
+    animation: slide-up .18s ease-out;
+}
+
+@keyframes slide-up {
+    from { transform: translateY(100%); }
+}
+
+.story-viewers-panel header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 8px 8px 16px;
+    border-bottom: 1px solid var(--border);
+}
+
+.story-viewers-panel header .icon-btn {
+    color: var(--text-2);
+}
+
+.story-viewers-list {
+    overflow-y: auto;
+    padding: 6px;
+}
+
+.story-viewers-list .spinner {
+    border-color: var(--accent);
+    border-top-color: transparent;
+}
+
+.viewer-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+}
+
+.viewer-row .avatar {
+    width: 42px;
+    height: 42px;
+    font-size: 16px;
+}
+
+.viewer-name {
+    font-weight: 600;
+}
+
+.viewer-time {
+    color: var(--text-2);
+    font-size: 13px;
+}
