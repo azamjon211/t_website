@@ -1408,15 +1408,16 @@ svg {
     text-overflow: ellipsis;
 }
 
+/* Sits fully above the composer so it never covers the text field. */
 .picker {
     position: absolute;
     right: 16px;
-    bottom: calc(100% - 8px);
+    bottom: calc(100% + 4px);
     z-index: 5;
     display: flex;
     flex-direction: column;
-    width: min(360px, calc(100% - 32px));
-    height: min(380px, 55vh);
+    width: min(380px, calc(100% - 32px));
+    height: min(400px, 50vh);
     border-radius: 14px;
     background: var(--surface);
     box-shadow: var(--menu-shadow);
@@ -1466,10 +1467,13 @@ svg {
 
 .picker-grid {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+    /* Rows must keep their content height; auto rows get squeezed into the fixed-height panel. */
+    grid-auto-rows: max-content;
     align-content: start;
-    gap: 4px;
+    gap: 6px;
     flex: 1;
+    min-height: 0;
     padding: 8px;
     overflow-y: auto;
 }
@@ -1478,11 +1482,10 @@ svg {
     grid-template-columns: repeat(2, 1fr);
 }
 
+/* The image carries the square ratio: aspect-ratio on a stretched grid item is ignored and rows collapse. */
 .picker-item {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    aspect-ratio: 1;
+    display: block;
+    align-self: start;
     padding: 4px;
     border: 0;
     border-radius: 10px;
@@ -1497,19 +1500,21 @@ svg {
 }
 
 .picker-item img {
+    display: block;
     width: 100%;
-    height: 100%;
+    height: auto;
+    aspect-ratio: 1;
     object-fit: contain;
 }
 
 .picker-grid.gifs .picker-item {
-    aspect-ratio: auto;
-    height: 110px;
     padding: 0;
     background: var(--surface-2);
 }
 
 .picker-grid.gifs .picker-item img {
+    height: 110px;
+    aspect-ratio: auto;
     object-fit: cover;
 }
 
@@ -1688,4 +1693,18 @@ svg {
     width: auto;
     height: auto;
     padding: 10px 18px;
+}
+
+@media (max-width: 768px) {
+    .picker {
+        right: 8px;
+        left: 8px;
+        width: auto;
+        height: min(360px, 45vh);
+    }
+
+    .sticker {
+        width: 128px;
+        height: 128px;
+    }
 }
