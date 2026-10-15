@@ -198,10 +198,29 @@ function initChat() {
         if (!message) return '';
         if (message.deleted) return 'Xabar o\'chirildi';
         if (message.type === 'sticker') return `${stickerEmoji(message.sticker)} Stiker`;
+        if (message.type === 'call') return `${message.call?.media === 'video' ? '📹' : '📞'} ${callTitle(message)}`;
         const label = { image: '🖼 Rasm', video: '🎬 Video', audio: '🎵 Audio', gif: '🎞 GIF', file: `📎 ${message.attachment?.name || 'Fayl'}` }[message.type];
         if (!label && message.story) return `📖 ${message.body || 'Story\'ga javob'}`;
         if (label && message.body) return `${label.split(' ')[0]} ${message.body}`;
         return label || message.body || '';
+    }
+
+    // Worded from the reader's side: the caller sees "Chiquvchi", the callee "Kiruvchi" / "O'tkazib yuborilgan".
+    function callTitle(message) {
+        const outgoing = message.sender_id === me.id;
+        const video = message.call?.media === 'video';
+        switch (message.call?.status) {
+            case 'completed': return outgoing ? (video ? 'Chiquvchi video qo\'ng\'iroq' : 'Chiquvchi qo\'ng\'iroq') : (video ? 'Kiruvchi video qo\'ng\'iroq' : 'Kiruvchi qo\'ng\'iroq');
+            case 'declined': return outgoing ? 'Rad etilgan qo\'ng\'iroq' : 'Siz rad etgan qo\'ng\'iroq';
+            case 'busy': return outgoing ? 'Band edi' : 'O\'tkazib yuborilgan qo\'ng\'iroq';
+            default: return outgoing ? 'Bekor qilingan qo\'ng\'iroq' : 'O\'tkazib yuborilgan qo\'ng\'iroq';
+        }
+    }
+
+    function formatDuration(seconds) {
+        const m = Math.floor(seconds / 60);
+        const s = seconds % 60;
+        return m >= 60 ? `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
     }
 
     function stickerUrl(code) {
@@ -517,7 +536,7 @@ function initChat() {
     }
 
     function contentSignature(m) {
-        return JSON.stringify([m.body, m.edited_at, m.type, m.attachment?.url, m.gif?.url, m.sticker, m.story?.id, m.story?.expired, m.reply_to?.id, m.reply_to?.body, m.reply_to?.type, m.failed, !!m.pending]);
+        return JSON.stringify([m.body, m.edited_at, m.type, m.attachment?.url, m.gif?.url, m.sticker, m.call?.status, m.story?.id, m.story?.expired, m.reply_to?.id, m.reply_to?.body, m.reply_to?.type, m.failed, !!m.pending]);
     }
 
     function renderMessages() {
@@ -596,7 +615,19 @@ function initChat() {
 
         if (m.story) bubble.append(buildStoryQuote(m));
 
-        if (m.type === 'sticker' && m.sticker) {
+        if (m.type === 'call' && m.call) {
+            const missed = m.call.status !== 'completed' && m.sender_id !== me.id;
+            const row = h(`<button type="button" class="call-log${missed ? ' missed' : ''}"><span class="call-log-icon"></span><span class="call-log-text"><span class="call-log-title"></span><span class="call-log-sub"></span></span></button>`);
+            row.querySelector('.call-log-icon').innerHTML = m.call.media === 'video'
+                ? '<svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg>'
+                : '<svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>';
+            row.querySelector('.call-log-title').textContent = callTitle(m);
+            row.querySelector('.call-log-sub').textContent = m.call.status === 'completed' && m.call.duration > 0
+                ? formatDuration(m.call.duration)
+                : 'Qayta qo\'ng\'iroq qilish';
+            row.addEventListener('click', () => startCall(m.call.media));
+            bubble.append(row);
+        } else if (m.type === 'sticker' && m.sticker) {
             const sticker = h('<img class="sticker" alt="" width="160" height="160" decoding="async">');
             sticker.src = stickerUrl(m.sticker);
             sticker.alt = stickerEmoji(m.sticker);
@@ -1197,7 +1228,7 @@ function initChat() {
         const own = message.sender_id === me.id;
         const items = [];
         if (isReal) items.push(['reply', 'Javob berish', () => startReply(message)]);
-        if (isReal && own && message.type !== 'sticker') items.push(['edit', 'Tahrirlash', () => startEdit(message)]);
+        if (isReal && own && message.type !== 'sticker' && message.type !== 'call') items.push(['edit', 'Tahrirlash', () => startEdit(message)]);
         if (message.body) items.push(['copy', 'Nusxa olish', () => navigator.clipboard?.writeText(message.body).then(() => showToast('Nusxa olindi'))]);
         if (message.attachment) items.push(['download', 'Yuklab olish', () => { window.location.href = message.attachment.download_url; }]);
         items.push(['trash', isReal ? 'O\'chirish' : 'Bekor qilish', () => deleteMessage(message), true]);
@@ -1921,6 +1952,7 @@ function initChat() {
 
     async function startCall(media) {
         if (call || !state.peer || state.peer.id === me.id) return;
+        if (!callsAvailable()) { showToast('Qo\'ng\'iroq uchun sahifani https orqali oching va qayta yuklang'); return; }
         const current = call = {
             id: crypto.randomUUID(), peer: state.users.get(state.peer.id) || state.peer, media, direction: 'out', state: 'calling', facing: 'user',
         };

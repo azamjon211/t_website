@@ -42,6 +42,7 @@ class MessageResource extends JsonResource
             ],
             'gif' => $this->type === Message::TYPE_GIF ? $this->payload : null,
             'sticker' => $this->type === Message::TYPE_STICKER ? ($this->payload['code'] ?? null) : null,
+            'call' => $this->type === Message::TYPE_CALL ? $this->payload : null,
             'story' => $this->whenLoaded('story', fn () => $this->storyPreview($request), $this->story_id === null ? null : ['expired' => true]),
             'reply_to' => $this->whenLoaded('replyTo', fn () => $this->replyTo === null ? null : [
                 'id' => $this->replyTo->id,

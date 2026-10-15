@@ -1708,3 +1708,65 @@ svg {
         height: 128px;
     }
 }
+
+.call-log {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 200px;
+    padding: 4px 40px 4px 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.call-log-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    flex-shrink: 0;
+}
+
+.msg.out .call-log-icon {
+    background: var(--bubble-out-meta);
+}
+
+.call-log.missed .call-log-icon {
+    background: var(--danger);
+}
+
+.call-log-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
+.call-log-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.call-log-title {
+    font-weight: 600;
+}
+
+.call-log.missed .call-log-title {
+    color: var(--danger);
+}
+
+.call-log-sub {
+    color: var(--text-2);
+    font-size: 14px;
+}
+
+.msg.out .call-log-sub {
+    color: var(--bubble-out-meta);
+}

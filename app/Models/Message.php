@@ -31,6 +31,19 @@ class Message extends Model
     public const TYPE_STICKER = 'sticker';
 
     /**
+     * A finished (or unanswered) call, logged in the chat like Telegram does.
+     */
+    public const TYPE_CALL = 'call';
+
+    public const CALL_COMPLETED = 'completed';
+
+    public const CALL_MISSED = 'missed';
+
+    public const CALL_DECLINED = 'declined';
+
+    public const CALL_BUSY = 'busy';
+
+    /**
      * Animated Noto emoji codes that can be sent as stickers.
      *
      * @var list<string>
