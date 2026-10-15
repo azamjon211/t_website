@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CallController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\GifController;
 use App\Http\Controllers\MessageController;
@@ -38,6 +39,10 @@ Route::middleware('auth')->group(function () {
         Route::get('/sync', [ChatController::class, 'sync'])->name('sync');
         Route::get('/users/search', [ChatController::class, 'search'])->name('users.search');
         Route::get('/gifs', [GifController::class, 'search'])->middleware('throttle:60,1')->name('gifs.search');
+
+        Route::get('/calls/ice-servers', [CallController::class, 'iceServers'])->name('calls.ice');
+        Route::post('/calls/{user}/signal', [CallController::class, 'signal'])->middleware('throttle:60,1')->name('calls.signal');
+        Route::get('/calls/signals/{signalId}', [CallController::class, 'fetchSignal'])->whereUuid('signalId')->name('calls.signals.show');
         Route::get('/users/{user:username}', [ChatController::class, 'contact'])->name('users.show');
 
         Route::get('/chats/{user}/messages', [MessageController::class, 'index'])->name('messages.index');

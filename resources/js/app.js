@@ -490,6 +490,7 @@ function initChat() {
     }
 
     function renderHeader() {
+        updateCallActions();
         const peer = state.users.get(state.peer.id) || state.peer;
         paintAvatar(el.peerAvatar, peer, { saved: peer.id === me.id });
         el.peerName.textContent = displayName(peer);
@@ -1054,7 +1055,9 @@ function initChat() {
 
     async function loadGifs(query) {
         if (!boot.gifsEnabled) {
-            picker.grid.replaceChildren(h('<div class="picker-note">GIF qidiruv hali sozlanmagan (GIPHY_API_KEY)</div>'));
+            const note = h('<div class="picker-note">GIF qidiruv hali ulanmagan.<br>Telefon yoki kompyuterdagi GIF faylni yuborishingiz mumkin.<br><br><button type="button" class="btn-primary picker-upload">GIF fayl tanlash</button></div>');
+            note.querySelector('button').addEventListener('click', () => $('gifFileInput').click());
+            picker.grid.replaceChildren(note);
             return;
         }
         const requestId = ++picker.gifRequest;
@@ -1077,6 +1080,13 @@ function initChat() {
             if (requestId === picker.gifRequest) picker.grid.replaceChildren(h(`<div class="picker-note">${escapeHtml(e.message)}</div>`));
         }
     }
+
+    $('gifFileInput').addEventListener('change', (e) => {
+        const files = [...e.target.files];
+        e.target.value = '';
+        togglePicker(false);
+        sendFiles(files);
+    });
 
     picker.btn.addEventListener('click', (e) => { e.stopPropagation(); togglePicker(); });
     for (const button of picker.el.querySelectorAll('.picker-tab')) {
@@ -1743,18 +1753,355 @@ function initChat() {
         return window.Echo?.connector?.pusher?.connection?.state === 'connected';
     }
 
-    window.Echo?.private(`App.Models.User.${me.id}`).listen('.sync', ({ topic, story_id: storyId }) => {
+    window.Echo?.private(`App.Models.User.${me.id}`).listen('.sync', (payload) => {
+        const { topic, story_id: storyId } = payload;
         if (topic === 'messages') {
             syncNow();
         } else if (topic === 'stories') {
             if (sv.viewer.hidden) loadStories().catch(() => {});
             else storiesDirty = true;
+        } else if (topic === 'call') {
+            receiveCallSignal(payload.signal_id);
         } else if (topic === 'story-viewed') {
             if (!sv.viewer.hidden && currentStory()?.id === storyId) refreshStoryViewers({ silent: true });
             else if (sv.viewer.hidden) loadStories().catch(() => {});
             else storiesDirty = true;
         }
     });
+
+    // ================================================================ CALLS (WebRTC)
+    // Signalling is non-trickle: each side waits for ICE gathering, then sends one complete SDP
+    // (invite → accept). Media flows peer-to-peer, through TURN when NAT gets in the way.
+    const cv = {
+        root: $('call'), remote: $('callRemote'), local: $('callLocal'), avatar: $('callAvatar'), name: $('callName'),
+        status: $('callStatus'), controls: $('callControls'), incoming: $('callIncoming'), mute: $('callMuteBtn'),
+        camera: $('callCameraBtn'), flip: $('callFlipBtn'), hangup: $('callHangupBtn'), accept: $('callAcceptBtn'),
+        decline: $('callDeclineBtn'), actions: $('callActions'), audioBtn: $('audioCallBtn'), videoBtn: $('videoCallBtn'),
+    };
+    const CALL_RING_TIMEOUT_MS = 45000;
+    const ICE_GATHER_TIMEOUT_MS = 3000;
+    const CALL_DISCONNECT_GRACE_MS = 8000;
+    let call = null; // { id, peer, media, direction, state, pc, stream, offerSdp, timer, ticker, startedAt, facing }
+    let iceServers = null;
+
+    function callsAvailable() {
+        return !!window.Echo && !!navigator.mediaDevices?.getUserMedia && 'RTCPeerConnection' in window;
+    }
+
+    // Looks the node up itself: renderHeader may run before this section's constants exist.
+    function updateCallActions() {
+        $('callActions').hidden = !(state.peer && state.peer.id !== me.id && callsAvailable());
+    }
+
+    function sendSignal(peerId, payload) {
+        return api('POST', `/api/calls/${peerId}/signal`, payload);
+    }
+
+    async function getIceServers() {
+        if (!iceServers) iceServers = (await api('GET', '/api/calls/ice-servers')).data;
+        return iceServers;
+    }
+
+    async function getMedia(video, facing = 'user') {
+        try {
+            return await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                video: video ? { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
+            });
+        } catch {
+            throw new Error(video ? 'Kamera yoki mikrofonga ruxsat berilmadi' : 'Mikrofonga ruxsat berilmadi');
+        }
+    }
+
+    function waitForIce(pc) {
+        if (pc.iceGatheringState === 'complete') return Promise.resolve();
+        return new Promise((resolve) => {
+            const timer = setTimeout(resolve, ICE_GATHER_TIMEOUT_MS);
+            pc.addEventListener('icegatheringstatechange', () => {
+                if (pc.iceGatheringState === 'complete') { clearTimeout(timer); resolve(); }
+            });
+        });
+    }
+
+    async function createPeer(current) {
+        const pc = new RTCPeerConnection({ iceServers: await getIceServers() });
+        pc.addEventListener('track', (e) => {
+            if (call !== current) return;
+            cv.remote.srcObject = e.streams[0] || new MediaStream([e.track]);
+            cv.remote.play?.().catch(() => {});
+            updateCallLayout();
+        });
+        pc.addEventListener('connectionstatechange', () => {
+            if (call !== current) return;
+            if (pc.connectionState === 'connected') {
+                markCallConnected();
+            } else if (pc.connectionState === 'failed') {
+                finishCall('Ulanib bo\'lmadi', 'end');
+            } else if (pc.connectionState === 'disconnected') {
+                setCallStatus('Qayta ulanmoqda...');
+                setTimeout(() => {
+                    if (call === current && pc.connectionState === 'disconnected') finishCall('Aloqa uzildi', 'end');
+                }, CALL_DISCONNECT_GRACE_MS);
+            }
+        });
+        return pc;
+    }
+
+    function attachLocalStream(stream) {
+        call.stream = stream;
+        const hasVideo = stream.getVideoTracks().length > 0;
+        cv.local.srcObject = hasVideo ? stream : null;
+        cv.local.hidden = !hasVideo;
+        cv.local.classList.toggle('rear', call.facing === 'environment');
+    }
+
+    function showCallScreen(statusText) {
+        paintAvatar(cv.avatar, call.peer, { ring: false });
+        cv.avatar.classList.remove('online');
+        cv.name.textContent = call.peer.name || '';
+        setCallStatus(statusText);
+        const incomingRinging = call.direction === 'in' && call.state === 'ringing';
+        cv.incoming.hidden = !incomingRinging;
+        cv.controls.hidden = incomingRinging;
+        cv.camera.hidden = call.media !== 'video';
+        cv.flip.hidden = call.media !== 'video';
+        for (const button of [cv.mute, cv.camera]) button.setAttribute('aria-pressed', 'false');
+        cv.root.classList.add('ringing');
+        cv.root.classList.remove('has-video');
+        cv.root.hidden = false;
+        updateCallLayout();
+    }
+
+    function setCallStatus(text) {
+        cv.status.textContent = text;
+    }
+
+    function updateCallLayout() {
+        const remoteVideo = cv.remote.srcObject?.getVideoTracks().some((t) => t.readyState === 'live');
+        cv.root.classList.toggle('has-video', !!(call && call.media === 'video' && remoteVideo));
+    }
+
+    function markCallConnected() {
+        if (!call || call.state === 'connected') return;
+        clearTimeout(call.timer);
+        stopTone();
+        call.state = 'connected';
+        call.startedAt = Date.now();
+        cv.root.classList.remove('ringing');
+        const tick = () => {
+            const seconds = Math.floor((Date.now() - call.startedAt) / 1000);
+            setCallStatus(`${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`);
+        };
+        tick();
+        call.ticker = setInterval(tick, 1000);
+        updateCallLayout();
+    }
+
+    /**
+     * Tear the call down locally and, when `signalType` is given, tell the other side.
+     */
+    function finishCall(reason, signalType = null) {
+        const ended = call;
+        if (!ended) return;
+        call = null;
+        if (signalType) sendSignal(ended.peer.id, { type: signalType, call_id: ended.id }).catch(() => {});
+        clearTimeout(ended.timer);
+        clearInterval(ended.ticker);
+        stopTone();
+        ended.stream?.getTracks().forEach((track) => track.stop());
+        ended.pc?.close();
+        cv.remote.srcObject = null;
+        cv.local.srcObject = null;
+        cv.root.classList.remove('ringing', 'has-video');
+        cv.incoming.hidden = true;
+        cv.controls.hidden = true;
+        setCallStatus(reason);
+        setTimeout(() => { if (!call) cv.root.hidden = true; }, 1500);
+    }
+
+    async function startCall(media) {
+        if (call || !state.peer || state.peer.id === me.id) return;
+        const current = call = {
+            id: crypto.randomUUID(), peer: state.users.get(state.peer.id) || state.peer, media, direction: 'out', state: 'calling', facing: 'user',
+        };
+        showCallScreen('Ulanmoqda...');
+        try {
+            const stream = await getMedia(media === 'video');
+            if (call !== current) { stream.getTracks().forEach((t) => t.stop()); return; }
+            attachLocalStream(stream);
+            current.pc = await createPeer(current);
+            stream.getTracks().forEach((track) => current.pc.addTrack(track, stream));
+            await current.pc.setLocalDescription(await current.pc.createOffer());
+            await waitForIce(current.pc);
+            if (call !== current) return;
+            await sendSignal(current.peer.id, { type: 'invite', call_id: current.id, media, sdp: current.pc.localDescription.sdp });
+            if (call !== current) return;
+            setCallStatus('Chaqirilmoqda...');
+            playTone('ringback');
+            current.timer = setTimeout(() => finishCall('Javob bermadi', 'cancel'), CALL_RING_TIMEOUT_MS);
+        } catch (e) {
+            if (call === current) finishCall(e.message || 'Qo\'ng\'iroq qilib bo\'lmadi');
+        }
+    }
+
+    async function acceptCall() {
+        const current = call;
+        if (!current || current.direction !== 'in' || current.state !== 'ringing') return;
+        current.state = 'connecting';
+        clearTimeout(current.timer);
+        stopTone();
+        cv.incoming.hidden = true;
+        cv.controls.hidden = false;
+        setCallStatus('Ulanmoqda...');
+        try {
+            const stream = await getMedia(current.media === 'video');
+            if (call !== current) { stream.getTracks().forEach((t) => t.stop()); return; }
+            attachLocalStream(stream);
+            current.pc = await createPeer(current);
+            stream.getTracks().forEach((track) => current.pc.addTrack(track, stream));
+            await current.pc.setRemoteDescription({ type: 'offer', sdp: current.offerSdp });
+            await current.pc.setLocalDescription(await current.pc.createAnswer());
+            await waitForIce(current.pc);
+            if (call !== current) return;
+            await sendSignal(current.peer.id, { type: 'accept', call_id: current.id, sdp: current.pc.localDescription.sdp });
+        } catch (e) {
+            if (call === current) finishCall(e.message || 'Ulanib bo\'lmadi', 'end');
+        }
+    }
+
+    async function receiveCallSignal(signalId) {
+        let signal;
+        try { ({ data: signal } = await api('GET', `/api/calls/signals/${signalId}`)); } catch { return; }
+
+        if (signal.type === 'invite') {
+            if (call) { sendSignal(signal.from, { type: 'busy', call_id: signal.call_id }).catch(() => {}); return; }
+            const peer = state.users.get(signal.from) || { id: signal.from, name: 'Qo\'ng\'iroq' };
+            call = { id: signal.call_id, peer, media: signal.media, direction: 'in', state: 'ringing', offerSdp: signal.sdp, facing: 'user' };
+            showCallScreen(signal.media === 'video' ? 'Video qo\'ng\'iroq...' : 'Qo\'ng\'iroq qilmoqda...');
+            playTone('ring');
+            call.timer = setTimeout(() => finishCall('O\'tkazib yuborilgan qo\'ng\'iroq'), CALL_RING_TIMEOUT_MS);
+            if (document.hidden && 'Notification' in window && Notification.permission === 'granted') {
+                const n = new Notification(peer.name || 'Qo\'ng\'iroq', { body: signal.media === 'video' ? '📹 Video qo\'ng\'iroq' : '📞 Qo\'ng\'iroq', tag: `call-${signal.call_id}` });
+                n.onclick = () => { window.focus(); n.close(); };
+            }
+            return;
+        }
+
+        if (!call || call.id !== signal.call_id) return;
+
+        if (signal.type === 'accept' && call.direction === 'out' && call.pc) {
+            call.state = 'connecting';
+            clearTimeout(call.timer);
+            stopTone();
+            setCallStatus('Ulanmoqda...');
+            try {
+                await call.pc.setRemoteDescription({ type: 'answer', sdp: signal.sdp });
+            } catch {
+                finishCall('Ulanib bo\'lmadi', 'end');
+            }
+        } else if (signal.type === 'reject') {
+            finishCall('Rad etildi');
+        } else if (signal.type === 'busy') {
+            finishCall('Band');
+        } else if (signal.type === 'cancel') {
+            finishCall('O\'tkazib yuborilgan qo\'ng\'iroq');
+        } else if (signal.type === 'end') {
+            finishCall('Qo\'ng\'iroq tugadi');
+        }
+    }
+
+    cv.audioBtn.addEventListener('click', () => startCall('audio'));
+    cv.videoBtn.addEventListener('click', () => startCall('video'));
+    cv.accept.addEventListener('click', acceptCall);
+    cv.decline.addEventListener('click', () => finishCall('Rad etildi', 'reject'));
+    cv.hangup.addEventListener('click', () => {
+        if (!call) return;
+        const unanswered = call.direction === 'out' && call.state === 'calling';
+        finishCall(unanswered ? 'Bekor qilindi' : 'Qo\'ng\'iroq tugadi', unanswered ? 'cancel' : 'end');
+    });
+    cv.mute.addEventListener('click', () => {
+        const tracks = call?.stream?.getAudioTracks() || [];
+        const muted = cv.mute.getAttribute('aria-pressed') !== 'true';
+        tracks.forEach((t) => { t.enabled = !muted; });
+        cv.mute.setAttribute('aria-pressed', String(muted));
+    });
+    cv.camera.addEventListener('click', () => {
+        const tracks = call?.stream?.getVideoTracks() || [];
+        const off = cv.camera.getAttribute('aria-pressed') !== 'true';
+        tracks.forEach((t) => { t.enabled = !off; });
+        cv.camera.setAttribute('aria-pressed', String(off));
+        cv.local.hidden = off || tracks.length === 0;
+    });
+    cv.flip.addEventListener('click', async () => {
+        const current = call;
+        if (!current?.pc || !current.stream) return;
+        const facing = current.facing === 'user' ? 'environment' : 'user';
+        try {
+            const fresh = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { exact: facing } } });
+            const track = fresh.getVideoTracks()[0];
+            const sender = current.pc.getSenders().find((s) => s.track?.kind === 'video');
+            if (!track || !sender || call !== current) { fresh.getTracks().forEach((t) => t.stop()); return; }
+            await sender.replaceTrack(track);
+            current.stream.getVideoTracks().forEach((t) => { t.stop(); current.stream.removeTrack(t); });
+            current.stream.addTrack(track);
+            current.facing = facing;
+            attachLocalStream(current.stream);
+        } catch {
+            showToast('Boshqa kamera topilmadi');
+        }
+    });
+
+    // Let the other side know if the tab is closed mid-call.
+    window.addEventListener('pagehide', () => {
+        if (!call) return;
+        const unanswered = call.state === 'calling' || call.state === 'ringing';
+        const type = call.direction === 'in' && unanswered ? 'reject' : (unanswered ? 'cancel' : 'end');
+        fetch(`/api/calls/${call.peer.id}/signal`, {
+            method: 'POST',
+            keepalive: true,
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'X-CSRF-TOKEN': csrf },
+            body: JSON.stringify({ type, call_id: call.id }),
+        }).catch(() => {});
+    });
+
+    // ---------- tones (generated, so no audio assets are needed)
+    const tone = { ctx: null, timer: 0 };
+
+    function beep(ctx, frequency, delay, duration) {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        const start = ctx.currentTime + delay;
+        osc.frequency.value = frequency;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.12, start + 0.02);
+        gain.gain.setValueAtTime(0.12, start + duration - 0.05);
+        gain.gain.linearRampToValueAtTime(0, start + duration);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + duration);
+    }
+
+    function playTone(kind) {
+        stopTone();
+        try {
+            tone.ctx ||= new (window.AudioContext || window.webkitAudioContext)();
+            tone.ctx.resume?.().catch(() => {});
+        } catch {
+            return;
+        }
+        const ctx = tone.ctx;
+        const once = kind === 'ring'
+            ? () => { beep(ctx, 660, 0, 0.35); beep(ctx, 880, 0.45, 0.35); navigator.vibrate?.([300, 150, 300]); }
+            : () => beep(ctx, 425, 0, 1);
+        once();
+        tone.timer = setInterval(once, kind === 'ring' ? 2000 : 4000);
+    }
+
+    function stopTone() {
+        clearInterval(tone.timer);
+        tone.timer = 0;
+        navigator.vibrate?.(0);
+    }
 
     // Pings sent while the socket was reconnecting are lost, so catch up once it is back.
     window.Echo?.connector?.pusher?.connection?.bind('connected', () => {

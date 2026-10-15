@@ -21,6 +21,8 @@ class SyncRequested implements ShouldBroadcastNow
 
     public const TOPIC_STORY_VIEWED = 'story-viewed';
 
+    public const TOPIC_CALL = 'call';
+
     /**
      * @param  list<int>  $userIds
      * @param  array<string, mixed>  $data

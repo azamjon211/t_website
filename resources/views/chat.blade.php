@@ -65,6 +65,14 @@
                         <div class="chat-header-name" id="peerName"></div>
                         <div class="chat-header-status" id="peerStatus"></div>
                     </div>
+                    <div class="chat-header-actions" id="callActions" hidden>
+                        <button type="button" class="icon-btn" id="audioCallBtn" aria-label="Qo'ng'iroq qilish">
+                            <svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+                        </button>
+                        <button type="button" class="icon-btn" id="videoCallBtn" aria-label="Video qo'ng'iroq">
+                            <svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg>
+                        </button>
+                    </div>
                 </header>
 
                 <div class="messages-scroll" id="messagesScroll">
@@ -106,6 +114,7 @@
                             <button type="button" class="picker-tab" data-tab="gifs" role="tab" aria-selected="false">GIF</button>
                         </div>
                         <input type="search" class="picker-search" id="gifSearch" placeholder="GIF qidirish..." autocomplete="off" hidden>
+                        <input type="file" id="gifFileInput" accept="image/gif" hidden>
                         <div class="picker-grid" id="pickerGrid"></div>
                     </div>
                     <button type="button" class="send-btn" id="sendBtn" aria-label="Yuborish">
@@ -121,6 +130,38 @@
     </div>
 
     <div class="context-menu" id="contextMenu" hidden></div>
+
+    {{-- ============ Call ============ --}}
+    <div class="call" id="call" hidden role="dialog" aria-modal="true" aria-labelledby="callName">
+        <video class="call-remote" id="callRemote" autoplay playsinline></video>
+        <video class="call-local" id="callLocal" autoplay playsinline muted hidden></video>
+        <div class="call-info" id="callInfo">
+            <div class="avatar call-avatar" id="callAvatar"></div>
+            <div class="call-name" id="callName"></div>
+            <div class="call-status" id="callStatus"></div>
+        </div>
+        <div class="call-controls" id="callControls">
+            <button type="button" class="call-btn" id="callMuteBtn" aria-label="Mikrofon" aria-pressed="false">
+                <svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
+            </button>
+            <button type="button" class="call-btn" id="callCameraBtn" aria-label="Kamera" aria-pressed="false">
+                <svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2"/><path d="M16 10l6-3v10l-6-3"/></svg>
+            </button>
+            <button type="button" class="call-btn" id="callFlipBtn" aria-label="Kamerani almashtirish">
+                <svg viewBox="0 0 24 24"><path d="M20 7h-3l-2-3H9L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M9 13a3 3 0 0 1 5-2.2M15 14a3 3 0 0 1-5 2.2M14 9v2h-2M10 18v-2h2"/></svg>
+            </button>
+            <button type="button" class="call-btn danger" id="callHangupBtn" aria-label="Tugatish">
+                <svg viewBox="0 0 24 24"><path d="M3 15c5-5 13-5 18 0l-2.5 2.5-3.5-2v-2.5a12 12 0 0 0-6 0V15l-3.5 2z"/></svg>
+            </button>
+        </div>
+        <div class="call-controls" id="callIncoming" hidden>
+            <button type="button" class="call-btn danger" id="callDeclineBtn" aria-label="Rad etish">
+                <svg viewBox="0 0 24 24"><path d="M3 15c5-5 13-5 18 0l-2.5 2.5-3.5-2v-2.5a12 12 0 0 0-6 0V15l-3.5 2z"/></svg>
+            </button>
+            <button type="button" class="call-btn accept" id="callAcceptBtn" aria-label="Javob berish">
+                <svg viewBox="0 0 24 24"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2"/></svg>
+            </button>        </div>
+    </div>
 
     <div class="lightbox" id="lightbox" hidden>
         <div class="lightbox-bar">

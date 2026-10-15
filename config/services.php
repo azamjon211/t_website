@@ -32,6 +32,11 @@ return [
         'key' => env('GIPHY_API_KEY'),
     ],
 
+    'turn' => [
+        'url' => env('TURN_URL'),
+        'secret' => env('TURN_SECRET'),
+    ],
+
     'slack' => [
         'notifications' => [
             'bot_user_oauth_token' => env('SLACK_BOT_USER_OAUTH_TOKEN'),
