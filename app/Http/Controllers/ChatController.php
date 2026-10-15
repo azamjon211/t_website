@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\SyncRequested;
 use App\Http\Requests\StoreMessageRequest;
 use App\Http\Requests\StoreStoryRequest;
 use App\Http\Resources\ContactResource;
@@ -30,6 +31,8 @@ class ChatController extends Controller
                 'me' => (new ContactResource($request->user()))->resolve($request),
                 'maxUploadBytes' => StoreMessageRequest::MAX_FILE_KB * 1024,
                 'maxStoryBytes' => StoreStoryRequest::MAX_FILE_KB * 1024,
+                'stickers' => Message::STICKERS,
+                'gifsEnabled' => filled(config('services.giphy.key')),
             ],
         ]);
     }
@@ -120,7 +123,7 @@ class ChatController extends Controller
         $messages = Message::withTrashed()
             ->involving($me->id)
             ->where('updated_at', '>=', $since)
-            ->with('replyTo')
+            ->with(['replyTo', 'story'])
             ->orderBy('id')
             ->limit(500)
             ->get();
@@ -147,6 +150,8 @@ class ChatController extends Controller
         $request->user()->touchLastSeen();
 
         Cache::put(self::typingKey($request->user()->id, $user->id), true, now()->addSeconds(4));
+
+        SyncRequested::send([$user->id], SyncRequested::TOPIC_MESSAGES);
 
         return response()->json(['ok' => true]);
     }

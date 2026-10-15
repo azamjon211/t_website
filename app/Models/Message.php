@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
-#[Fillable(['sender_id', 'receiver_id', 'body', 'type', 'reply_to_id', 'attachment_path', 'attachment_name', 'attachment_mime', 'attachment_size'])]
+#[Fillable(['sender_id', 'receiver_id', 'body', 'type', 'reply_to_id', 'story_id', 'attachment_path', 'attachment_name', 'attachment_mime', 'attachment_size', 'payload'])]
 class Message extends Model
 {
     /** @use HasFactory<MessageFactory> */
@@ -25,6 +25,30 @@ class Message extends Model
     public const TYPE_AUDIO = 'audio';
 
     public const TYPE_FILE = 'file';
+
+    public const TYPE_GIF = 'gif';
+
+    public const TYPE_STICKER = 'sticker';
+
+    /**
+     * Animated Noto emoji codes that can be sent as stickers.
+     *
+     * @var list<string>
+     */
+    public const STICKERS = [
+        '1f600', '1f603', '1f604', '1f601', '1f606', '1f605', '1f602', '1f923', '1f62d', '1f609',
+        '1f60a', '1f607', '1f970', '1f60d', '1f929', '1f618', '1f60b', '1f61c', '1f92a', '1f60e',
+        '1f973', '1f914', '1f928', '1f610', '1f644', '1f60f', '1f62c', '1f622', '1f620', '1f621',
+        '1f92c', '1f631', '1f633', '1f97a', '1f634', '1f924', '1f922', '1f92e', '1f975', '1f976',
+        '1f480', '1f47b', '1f4a9', '1f921', '1f648', '1f649', '1f64a', '2764_fe0f', '1f494', '1f525',
+        '2728', '1f389', '1f38a', '1f44d', '1f44e', '1f44f', '1f64f', '1f4aa', '1f44b', '270c_fe0f',
+        '1f91d', '1f440', '1f4af', '1f680', '1f308', '2b50', '1f31f', '1f496', '1f381', '1f382',
+    ];
+
+    /**
+     * Only GIFs hosted on GIPHY's CDN may be embedded.
+     */
+    public const GIF_URL_PATTERN = '#^https://media[0-9]*\.giphy\.com/[A-Za-z0-9/_.=\-]+$#';
 
     /**
      * Server-detected MIME types that may be rendered inline in the browser.
@@ -48,6 +72,7 @@ class Message extends Model
             'read_at' => 'datetime',
             'edited_at' => 'datetime',
             'attachment_size' => 'integer',
+            'payload' => 'array',
         ];
     }
 
@@ -73,6 +98,16 @@ class Message extends Model
     public function replyTo(): BelongsTo
     {
         return $this->belongsTo(Message::class, 'reply_to_id')->withTrashed();
+    }
+
+    /**
+     * The story this message replies to.
+     *
+     * @return BelongsTo<Story, $this>
+     */
+    public function story(): BelongsTo
+    {
+        return $this->belongsTo(Story::class);
     }
 
     /**

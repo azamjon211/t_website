@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\SyncRequested;
 use App\Http\Requests\StoreStoryRequest;
 use App\Http\Resources\ContactResource;
 use App\Http\Resources\StoryResource;
@@ -73,6 +74,8 @@ class StoryController extends Controller
 
         $story->loadCount('viewers');
 
+        self::notifyAudience($request->user());
+
         return (new StoryResource($story))->response()->setStatusCode(201);
     }
 
@@ -81,7 +84,11 @@ class StoryController extends Controller
         Gate::authorize('view', $story);
 
         if ($story->user_id !== $request->user()->id) {
-            $story->viewers()->syncWithoutDetaching([$request->user()->id]);
+            $changes = $story->viewers()->syncWithoutDetaching([$request->user()->id]);
+
+            if ($changes['attached'] !== []) {
+                SyncRequested::send([$story->user_id], SyncRequested::TOPIC_STORY_VIEWED, ['story_id' => $story->id]);
+            }
         }
 
         return response()->json(['ok' => true]);
@@ -108,7 +115,17 @@ class StoryController extends Controller
         Storage::disk('local')->delete($story->media_path);
         $story->delete();
 
+        self::notifyAudience($story->user);
+
         return response()->json(['id' => $story->id, 'deleted' => true]);
+    }
+
+    /**
+     * Tell the author's chat partners (and the author's other tabs) that the story strip changed.
+     */
+    private static function notifyAudience(User $author): void
+    {
+        SyncRequested::send($author->partnerIds()->push($author->id), SyncRequested::TOPIC_STORIES);
     }
 
     public function media(Story $story): BinaryFileResponse

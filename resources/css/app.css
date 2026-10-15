@@ -1305,3 +1305,218 @@ svg {
         bottom: 76px;
     }
 }
+
+/* ==========================================================================
+   Stickers, GIFs and story replies
+   ========================================================================== */
+.bubble.sticker-only {
+    padding: 0;
+    background: transparent !important;
+    box-shadow: none;
+}
+
+.bubble.sticker-only::before {
+    display: none;
+}
+
+.bubble.sticker-only .meta {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    top: auto;
+    float: none;
+    margin: 0;
+    padding: 0 6px;
+    border-radius: 10px;
+    background: rgba(0, 0, 0, .45);
+    color: #fff;
+}
+
+.sticker {
+    display: block;
+    width: 160px;
+    height: 160px;
+    object-fit: contain;
+}
+
+.media.gif img {
+    width: auto;
+    height: auto;
+    max-width: min(100%, 320px);
+    max-height: 260px;
+}
+
+.story-quote {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 4px -2px;
+    padding: 4px 8px 4px 4px;
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.story-quote.expired {
+    cursor: default;
+}
+
+.msg.out .story-quote {
+    border-left-color: var(--bubble-out-meta);
+    background: color-mix(in srgb, var(--bubble-out-meta) 14%, transparent);
+}
+
+.story-quote-thumb {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 54px;
+    border-radius: 6px;
+    background: rgba(0, 0, 0, .15);
+    overflow: hidden;
+    flex-shrink: 0;
+    font-size: 18px;
+}
+
+.story-quote-thumb img,
+.story-quote-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.story-quote-text {
+    min-width: 0;
+}
+
+.story-quote-name {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.msg.out .story-quote-name {
+    color: var(--bubble-out-meta);
+}
+
+.story-quote-caption {
+    overflow: hidden;
+    color: var(--text-2);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.picker {
+    position: absolute;
+    right: 16px;
+    bottom: calc(100% - 8px);
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    width: min(360px, calc(100% - 32px));
+    height: min(380px, 55vh);
+    border-radius: 14px;
+    background: var(--surface);
+    box-shadow: var(--menu-shadow);
+    overflow: hidden;
+}
+
+.picker[hidden] {
+    display: none;
+}
+
+.picker-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+}
+
+.picker-tab {
+    flex: 1;
+    padding: 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--text-2);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.picker-tab.active {
+    border-bottom-color: var(--accent);
+    color: var(--accent);
+}
+
+.picker-search {
+    margin: 8px 8px 0;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: var(--surface-2);
+    color: var(--text);
+    font: inherit;
+    outline: none;
+}
+
+.picker-search:focus {
+    border-color: var(--accent);
+}
+
+.picker-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    align-content: start;
+    gap: 4px;
+    flex: 1;
+    padding: 8px;
+    overflow-y: auto;
+}
+
+.picker-grid.gifs {
+    grid-template-columns: repeat(2, 1fr);
+}
+
+.picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    aspect-ratio: 1;
+    padding: 4px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    overflow: hidden;
+}
+
+.picker-item:hover,
+.picker-item:focus-visible {
+    background: var(--hover);
+}
+
+.picker-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.picker-grid.gifs .picker-item {
+    aspect-ratio: auto;
+    height: 110px;
+    padding: 0;
+    background: var(--surface-2);
+}
+
+.picker-grid.gifs .picker-item img {
+    object-fit: cover;
+}
+
+.picker-note {
+    grid-column: 1 / -1;
+    padding: 24px 12px;
+    color: var(--text-2);
+    text-align: center;
+    font-size: 14px;
+}

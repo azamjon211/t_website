@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChatController;
+use App\Http\Controllers\GifController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StoryController;
@@ -36,6 +37,7 @@ Route::middleware('auth')->group(function () {
         Route::get('/chats', [ChatController::class, 'chats'])->name('chats.index');
         Route::get('/sync', [ChatController::class, 'sync'])->name('sync');
         Route::get('/users/search', [ChatController::class, 'search'])->name('users.search');
+        Route::get('/gifs', [GifController::class, 'search'])->middleware('throttle:60,1')->name('gifs.search');
         Route::get('/users/{user:username}', [ChatController::class, 'contact'])->name('users.show');
 
         Route::get('/chats/{user}/messages', [MessageController::class, 'index'])->name('messages.index');

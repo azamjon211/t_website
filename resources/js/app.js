@@ -3,8 +3,12 @@
  *
  * Realtime model: the client polls /api/sync with a server-issued cursor. The server returns every
  * message created, edited, read or deleted since then (with a small overlap), and the client upserts
- * them by id — so duplicates are harmless and nothing is missed. No websocket server is required.
+ * them by id — so duplicates are harmless and nothing is missed. When the Reverb websocket is up, the
+ * server pings `App.Models.User.{id}` whenever something changes, the client syncs immediately and
+ * the poll slows down; if the socket is down, polling alone keeps everything working.
  */
+
+import './echo';
 
 const root = document.getElementById('app');
 if (root) {
@@ -18,6 +22,9 @@ function initChat() {
 
     const POLL_ACTIVE_MS = 1500;
     const POLL_HIDDEN_MS = 6000;
+    const POLL_SOCKET_MS = 5000;
+    const MAX_IMAGE_SIDE = 2048;
+    const COMPRESS_MIN_BYTES = 400 * 1024;
     const STORY_VIEWERS_POLL_MS = 5000;
     const STORIES_POLL_MS = 10000;
     const AVATAR_GRADIENTS = [
@@ -190,9 +197,19 @@ function initChat() {
     function previewText(message) {
         if (!message) return '';
         if (message.deleted) return 'Xabar o\'chirildi';
-        const label = { image: '🖼 Rasm', video: '🎬 Video', audio: '🎵 Audio', file: `📎 ${message.attachment?.name || 'Fayl'}` }[message.type];
+        if (message.type === 'sticker') return `${stickerEmoji(message.sticker)} Stiker`;
+        const label = { image: '🖼 Rasm', video: '🎬 Video', audio: '🎵 Audio', gif: '🎞 GIF', file: `📎 ${message.attachment?.name || 'Fayl'}` }[message.type];
+        if (!label && message.story) return `📖 ${message.body || 'Story\'ga javob'}`;
         if (label && message.body) return `${label.split(' ')[0]} ${message.body}`;
         return label || message.body || '';
+    }
+
+    function stickerUrl(code) {
+        return `https://fonts.gstatic.com/s/e/notoemoji/latest/${code}/512.webp`;
+    }
+
+    function stickerEmoji(code) {
+        return code ? String.fromCodePoint(...code.split('_').map((part) => parseInt(part, 16))) : '';
     }
 
     function displayName(user) {
@@ -499,7 +516,7 @@ function initChat() {
     }
 
     function contentSignature(m) {
-        return JSON.stringify([m.body, m.edited_at, m.type, m.attachment?.url, m.reply_to?.id, m.reply_to?.body, m.reply_to?.type, m.failed, !!m.pending]);
+        return JSON.stringify([m.body, m.edited_at, m.type, m.attachment?.url, m.gif?.url, m.sticker, m.story?.id, m.story?.expired, m.reply_to?.id, m.reply_to?.body, m.reply_to?.type, m.failed, !!m.pending]);
     }
 
     function renderMessages() {
@@ -576,6 +593,22 @@ function initChat() {
             bubble.append(quote);
         }
 
+        if (m.story) bubble.append(buildStoryQuote(m));
+
+        if (m.type === 'sticker' && m.sticker) {
+            const sticker = h('<img class="sticker" alt="" width="160" height="160" decoding="async">');
+            sticker.src = stickerUrl(m.sticker);
+            sticker.alt = stickerEmoji(m.sticker);
+            bubble.append(sticker);
+            bubble.classList.add('sticker-only');
+        } else if (m.type === 'gif' && m.gif) {
+            const media = h('<div class="media gif"><img alt="GIF" decoding="async"></div>');
+            const img = media.querySelector('img');
+            Object.assign(img, { src: m.gif.url, width: m.gif.width, height: m.gif.height });
+            img.addEventListener('load', () => keepBottomIfNear());
+            bubble.append(media);
+        }
+
         const att = m.attachment;
         const src = att?.url || m.localUrl;
         if (m.type === 'image' && src) {
@@ -614,7 +647,7 @@ function initChat() {
             bubble.append(text);
         } else {
             bubble.append(meta);
-            if (m.type === 'image' || m.type === 'video') bubble.classList.add('media-only');
+            if (m.type === 'image' || m.type === 'video' || m.type === 'gif') bubble.classList.add('media-only');
         }
 
         if (m.failed) {
@@ -628,6 +661,35 @@ function initChat() {
             startReply(messagesOf(state.peer.id).get(m.id));
         });
         return node;
+    }
+
+    // The story a message answers: a thumbnail while it is alive, a placeholder once it has expired.
+    function buildStoryQuote(m) {
+        const quote = h('<div class="story-quote"><div class="story-quote-thumb"></div><div class="story-quote-text"><div class="story-quote-name"></div><div class="story-quote-caption"></div></div></div>');
+        const thumb = quote.querySelector('.story-quote-thumb');
+        const authorId = m.receiver_id;
+        const author = authorId === me.id ? 'Sizning story\'ingiz' : `${state.users.get(authorId)?.name || ''} story'si`;
+        quote.querySelector('.story-quote-name').textContent = author;
+        quote.querySelector('.story-quote-caption').textContent = m.story.expired
+            ? 'Story muddati tugagan'
+            : (m.story.caption || (m.story.type === 'video' ? '🎬 Video' : '🖼 Rasm'));
+
+        if (!m.story.expired && m.story.url) {
+            const media = m.story.type === 'video'
+                ? Object.assign(document.createElement('video'), { muted: true, preload: 'metadata', playsInline: true })
+                : Object.assign(document.createElement('img'), { alt: '', loading: 'lazy', decoding: 'async' });
+            media.src = m.story.url;
+            thumb.append(media);
+            quote.addEventListener('click', () => {
+                if (state.storyGroups.some((g) => g.user.id === authorId && g.stories.some((s) => s.id === m.story.id))) {
+                    openStoryViewer(authorId);
+                }
+            });
+        } else {
+            quote.classList.add('expired');
+            thumb.textContent = '📖';
+        }
+        return quote;
     }
 
     function updateMeta(node, m) {
@@ -750,7 +812,8 @@ function initChat() {
     });
 
     el.input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && matchMedia('(min-width: 769px)').matches) {
+        // Enter sends everywhere (phones included); Shift+Enter inserts a new line.
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
             submit();
         } else if (e.key === 'Escape' && (state.replyTo || state.editing)) {
@@ -889,14 +952,39 @@ function initChat() {
         });
     }
 
-    function uploadFile(peerId, file, type, body, reply) {
+    /**
+     * Shrink big photos before upload (phone cameras produce 4–12 MB files), so they send and load fast.
+     * GIFs and small images go through untouched; anything that fails falls back to the original file.
+     */
+    async function compressImage(file) {
+        if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size < COMPRESS_MIN_BYTES) return file;
+        try {
+            const bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' });
+            const scale = Math.min(1, MAX_IMAGE_SIDE / Math.max(bitmap.width, bitmap.height));
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.round(bitmap.width * scale);
+            canvas.height = Math.round(bitmap.height * scale);
+            const ctx = canvas.getContext('2d');
+            ctx.fillStyle = '#fff'; // transparent PNGs would otherwise turn black as JPEG
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+            bitmap.close();
+            const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
+            if (!blob || blob.size >= file.size) return file;
+            return new File([blob], `${file.name.replace(/\.[^.]+$/, '')}.jpg`, { type: 'image/jpeg' });
+        } catch {
+            return file;
+        }
+    }
+
+    async function uploadFile(peerId, file, type, body, reply) {
         const localUrl = type === 'file' ? null : URL.createObjectURL(file);
         const temp = addTemp(peerId, {
             type, body: body || null, localUrl, localName: file.name, localSize: file.size, progress: 0, reply_to: replyPayload(reply),
         });
 
         const form = new FormData();
-        form.append('file', file);
+        form.append('file', type === 'image' ? await compressImage(file) : file);
         if (body) form.append('body', body);
         if (reply) form.append('reply_to_id', reply.id);
 
@@ -925,6 +1013,97 @@ function initChat() {
         });
         xhr.addEventListener('error', () => failTemp(peerId, temp, 'Tarmoq xatosi'));
         xhr.send(form);
+    }
+
+    // ---------------------------------------------------------------- stickers & GIFs
+    const picker = { el: $('picker'), btn: $('pickerBtn'), grid: $('pickerGrid'), search: $('gifSearch'), tab: 'stickers', gifTimer: 0, gifRequest: 0 };
+
+    function togglePicker(open = picker.el.hidden) {
+        picker.el.hidden = !open;
+        picker.btn.setAttribute('aria-expanded', String(open));
+        if (open) showPickerTab(picker.tab);
+    }
+
+    function showPickerTab(tab) {
+        picker.tab = tab;
+        for (const button of picker.el.querySelectorAll('.picker-tab')) {
+            const active = button.dataset.tab === tab;
+            button.classList.toggle('active', active);
+            button.setAttribute('aria-selected', String(active));
+        }
+        picker.search.hidden = tab !== 'gifs';
+        picker.grid.classList.toggle('gifs', tab === 'gifs');
+        if (tab === 'stickers') {
+            renderStickerGrid();
+        } else {
+            loadGifs(picker.search.value);
+            if (matchMedia('(min-width: 769px)').matches) picker.search.focus();
+        }
+    }
+
+    function renderStickerGrid() {
+        picker.grid.replaceChildren(...boot.stickers.map((code) => {
+            const item = h('<button type="button" class="picker-item"><img alt="" loading="lazy" decoding="async"></button>');
+            const img = item.firstElementChild;
+            img.src = stickerUrl(code);
+            img.alt = stickerEmoji(code);
+            item.addEventListener('click', () => sendSpecial({ type: 'sticker', sticker: code }, { sticker: code }));
+            return item;
+        }));
+    }
+
+    async function loadGifs(query) {
+        if (!boot.gifsEnabled) {
+            picker.grid.replaceChildren(h('<div class="picker-note">GIF qidiruv hali sozlanmagan (GIPHY_API_KEY)</div>'));
+            return;
+        }
+        const requestId = ++picker.gifRequest;
+        picker.grid.replaceChildren(h('<div class="picker-note"><div class="spinner"></div></div>'));
+        try {
+            const { data } = await api('GET', `/api/gifs?${new URLSearchParams({ q: query.trim() })}`);
+            if (requestId !== picker.gifRequest) return;
+            if (data.length === 0) {
+                picker.grid.replaceChildren(h('<div class="picker-note">Hech narsa topilmadi</div>'));
+                return;
+            }
+            picker.grid.replaceChildren(...data.map((gif) => {
+                const item = h('<button type="button" class="picker-item"><img alt="GIF" loading="lazy" decoding="async"></button>');
+                item.firstElementChild.src = gif.preview;
+                const payload = { url: gif.url, width: gif.width, height: gif.height };
+                item.addEventListener('click', () => sendSpecial({ type: 'gif', gif: payload }, { gif: payload }));
+                return item;
+            }));
+        } catch (e) {
+            if (requestId === picker.gifRequest) picker.grid.replaceChildren(h(`<div class="picker-note">${escapeHtml(e.message)}</div>`));
+        }
+    }
+
+    picker.btn.addEventListener('click', (e) => { e.stopPropagation(); togglePicker(); });
+    for (const button of picker.el.querySelectorAll('.picker-tab')) {
+        button.addEventListener('click', () => showPickerTab(button.dataset.tab));
+    }
+    picker.search.addEventListener('input', () => {
+        clearTimeout(picker.gifTimer);
+        picker.gifTimer = setTimeout(() => loadGifs(picker.search.value), 350);
+    });
+    document.addEventListener('click', (e) => {
+        if (!picker.el.hidden && !picker.el.contains(e.target) && !picker.btn.contains(e.target)) togglePicker(false);
+    });
+    picker.el.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); togglePicker(false); el.input.focus(); } });
+
+    async function sendSpecial(fields, payload) {
+        if (!state.peer) return;
+        const peerId = state.peer.id;
+        const reply = state.replyTo;
+        cancelContext();
+        togglePicker(false);
+        const temp = addTemp(peerId, { ...fields, body: null, reply_to: replyPayload(reply) });
+        try {
+            const { data } = await api('POST', `/api/chats/${peerId}/messages`, { ...payload, reply_to_id: reply?.id ?? null });
+            settleTemp(peerId, temp, data);
+        } catch (e) {
+            failTemp(peerId, temp, e.message);
+        }
     }
 
     // ---------------------------------------------------------------- reply / edit
@@ -1008,7 +1187,7 @@ function initChat() {
         const own = message.sender_id === me.id;
         const items = [];
         if (isReal) items.push(['reply', 'Javob berish', () => startReply(message)]);
-        if (isReal && own) items.push(['edit', 'Tahrirlash', () => startEdit(message)]);
+        if (isReal && own && message.type !== 'sticker') items.push(['edit', 'Tahrirlash', () => startEdit(message)]);
         if (message.body) items.push(['copy', 'Nusxa olish', () => navigator.clipboard?.writeText(message.body).then(() => showToast('Nusxa olindi'))]);
         if (message.attachment) items.push(['download', 'Yuklab olish', () => { window.location.href = message.attachment.download_url; }]);
         items.push(['trash', isReal ? 'O\'chirish' : 'Bekor qilish', () => deleteMessage(message), true]);
@@ -1154,6 +1333,7 @@ function initChat() {
         publish: $('storyPublishBtn'), progress: $('storyProgress'), input: $('storyInput'),
     };
     const viewer = { groupIndex: 0, storyIndex: 0, started: 0, elapsed: 0, paused: false, raf: 0, muted: true, groups: [] };
+    let storiesDirty = false; // a websocket ping arrived while the viewer was open
     let pendingStoryFile = null;
 
     async function loadStories() {
@@ -1233,13 +1413,13 @@ function initChat() {
 
     sv.captionInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); sv.publish.click(); } });
 
-    sv.publish.addEventListener('click', () => {
+    sv.publish.addEventListener('click', async () => {
         if (!pendingStoryFile || sv.publish.disabled) return;
+        sv.publish.disabled = true;
         const form = new FormData();
-        form.append('file', pendingStoryFile);
+        form.append('file', await compressImage(pendingStoryFile));
         if (sv.captionInput.value.trim()) form.append('caption', sv.captionInput.value.trim());
 
-        sv.publish.disabled = true;
         sv.progress.hidden = false;
         const bar = sv.progress.firstElementChild;
         bar.style.width = '0%';
@@ -1288,6 +1468,7 @@ function initChat() {
         sv.viewersPanel.hidden = true;
         renderStories();
         renderSidebar();
+        if (storiesDirty) { storiesDirty = false; loadStories().catch(() => {}); }
         if (state.peer) renderHeader();
     }
 
@@ -1490,7 +1671,7 @@ function initChat() {
 
     // While I'm looking at my own story, keep its viewers fresh without a page reload.
     setInterval(() => {
-        if (sv.viewer.hidden || sv.viewsBtn.hidden || document.hidden) return;
+        if (sv.viewer.hidden || sv.viewsBtn.hidden || document.hidden || socketConnected()) return;
         refreshStoryViewers({ silent: true });
     }, STORY_VIEWERS_POLL_MS);
 
@@ -1506,8 +1687,7 @@ function initChat() {
         const story = currentStory();
         sv.replyInput.value = '';
         sv.replyInput.blur();
-        const body = `📖 Story'ga javob${story?.caption ? ` («${story.caption}»)` : ''}:\n${text}`;
-        api('POST', `/api/chats/${group.user.id}/messages`, { body })
+        api('POST', `/api/chats/${group.user.id}/messages`, { body: text, story_id: story?.id ?? null })
             .then(() => { showToast('Javob yuborildi'); scheduleReloadChats(); })
             .catch((err) => showToast(err.message));
     });
@@ -1523,11 +1703,12 @@ function initChat() {
         if (state.peer && state.peer.id !== me.id && storyStatus(state.peer.id)) openStoryViewer(state.peer.id);
     });
 
-    setInterval(() => { if (sv.viewer.hidden && !document.hidden) loadStories().catch(() => {}); }, STORIES_POLL_MS);
+    setInterval(() => { if (sv.viewer.hidden && !document.hidden && !socketConnected()) loadStories().catch(() => {}); }, STORIES_POLL_MS);
 
     // ================================================================ SYNC LOOP
     let syncTimer;
     let syncing = false;
+    let syncQueued = false;
 
     async function sync() {
         if (syncing) return;
@@ -1542,9 +1723,45 @@ function initChat() {
         } catch { /* network hiccup: try again on next tick */ } finally {
             syncing = false;
             clearTimeout(syncTimer);
-            syncTimer = setTimeout(sync, document.hidden ? POLL_HIDDEN_MS : POLL_ACTIVE_MS);
+            if (syncQueued) {
+                syncQueued = false;
+                syncTimer = setTimeout(sync, 0);
+            } else {
+                syncTimer = setTimeout(sync, document.hidden ? POLL_HIDDEN_MS : (socketConnected() ? POLL_SOCKET_MS : POLL_ACTIVE_MS));
+            }
         }
     }
+
+    function syncNow() {
+        if (syncing) { syncQueued = true; return; }
+        clearTimeout(syncTimer);
+        sync();
+    }
+
+    // ================================================================ WEBSOCKET
+    function socketConnected() {
+        return window.Echo?.connector?.pusher?.connection?.state === 'connected';
+    }
+
+    window.Echo?.private(`App.Models.User.${me.id}`).listen('.sync', ({ topic, story_id: storyId }) => {
+        if (topic === 'messages') {
+            syncNow();
+        } else if (topic === 'stories') {
+            if (sv.viewer.hidden) loadStories().catch(() => {});
+            else storiesDirty = true;
+        } else if (topic === 'story-viewed') {
+            if (!sv.viewer.hidden && currentStory()?.id === storyId) refreshStoryViewers({ silent: true });
+            else if (sv.viewer.hidden) loadStories().catch(() => {});
+            else storiesDirty = true;
+        }
+    });
+
+    // Pings sent while the socket was reconnecting are lost, so catch up once it is back.
+    window.Echo?.connector?.pusher?.connection?.bind('connected', () => {
+        syncNow();
+        if (sv.viewer.hidden) loadStories().catch(() => {});
+        else storiesDirty = true;
+    });
 
     function applySync({ messages, peer }) {
         const touchedPeers = new Set();

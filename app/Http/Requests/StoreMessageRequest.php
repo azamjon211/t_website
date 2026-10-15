@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Models\Message;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -29,9 +30,15 @@ class StoreMessageRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'body' => ['nullable', 'string', 'max:4096', 'required_without:file'],
+            'body' => ['nullable', 'string', 'max:4096', 'required_without_all:file,gif,sticker'],
             'file' => ['nullable', 'file', 'max:'.self::MAX_FILE_KB],
+            'gif' => ['nullable', 'array:url,width,height', 'prohibits:file,sticker'],
+            'gif.url' => ['required_with:gif', 'string', 'max:500', 'regex:'.Message::GIF_URL_PATTERN],
+            'gif.width' => ['required_with:gif', 'integer', 'between:1,2000'],
+            'gif.height' => ['required_with:gif', 'integer', 'between:1,2000'],
+            'sticker' => ['nullable', 'string', Rule::in(Message::STICKERS), 'prohibits:file'],
             'reply_to_id' => ['nullable', 'integer', Rule::exists('messages', 'id')],
+            'story_id' => ['nullable', 'integer', Rule::exists('stories', 'id')],
         ];
     }
 }

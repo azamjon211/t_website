@@ -94,7 +94,19 @@
                             </button>
                             <input type="file" id="fileInput" multiple hidden>
                             <textarea id="input" rows="1" placeholder="Xabar yozing..." maxlength="4096"></textarea>
+                            <button type="button" class="icon-btn" id="pickerBtn" aria-label="Stiker va GIF" aria-expanded="false" aria-controls="picker">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg>
+                            </button>
                         </div>
+                    </div>
+
+                    <div class="picker" id="picker" hidden>
+                        <div class="picker-tabs" role="tablist">
+                            <button type="button" class="picker-tab active" data-tab="stickers" role="tab" aria-selected="true">Stikerlar</button>
+                            <button type="button" class="picker-tab" data-tab="gifs" role="tab" aria-selected="false">GIF</button>
+                        </div>
+                        <input type="search" class="picker-search" id="gifSearch" placeholder="GIF qidirish..." autocomplete="off" hidden>
+                        <div class="picker-grid" id="pickerGrid"></div>
                     </div>
                     <button type="button" class="send-btn" id="sendBtn" aria-label="Yuborish">
                         <svg viewBox="0 0 24 24"><path d="M3.4 20.4l17.4-7.5c.8-.4.8-1.5 0-1.8L3.4 3.6c-.7-.3-1.4.4-1.2 1.1L4 11l9 1-9 1-1.8 6.3c-.2.7.5 1.4 1.2 1.1z"/></svg>

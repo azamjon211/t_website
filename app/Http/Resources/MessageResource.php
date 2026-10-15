@@ -40,6 +40,9 @@ class MessageResource extends JsonResource
                 'mime' => $this->attachment_mime,
                 'size' => $this->attachment_size,
             ],
+            'gif' => $this->type === Message::TYPE_GIF ? $this->payload : null,
+            'sticker' => $this->type === Message::TYPE_STICKER ? ($this->payload['code'] ?? null) : null,
+            'story' => $this->whenLoaded('story', fn () => $this->storyPreview($request), $this->story_id === null ? null : ['expired' => true]),
             'reply_to' => $this->whenLoaded('replyTo', fn () => $this->replyTo === null ? null : [
                 'id' => $this->replyTo->id,
                 'sender_id' => $this->replyTo->sender_id,
@@ -51,6 +54,32 @@ class MessageResource extends JsonResource
             'edited_at' => $this->edited_at?->toIso8601String(),
             'created_at' => $this->created_at->toIso8601String(),
             'deleted' => false,
+        ];
+    }
+
+    /**
+     * The replied-to story, with a media link only while the viewer may still open it.
+     *
+     * @return array{id: int, type: string, url: string|null, caption: string|null, expired: bool}|array{expired: true}|null
+     */
+    private function storyPreview(Request $request): ?array
+    {
+        if ($this->story_id === null) {
+            return null;
+        }
+
+        if ($this->story === null) {
+            return ['expired' => true];
+        }
+
+        $canView = $request->user()?->can('view', $this->story) ?? false;
+
+        return [
+            'id' => $this->story->id,
+            'type' => $this->story->type,
+            'url' => $canView ? route('stories.media', $this->story) : null,
+            'caption' => $this->story->caption,
+            'expired' => ! $canView,
         ];
     }
 }

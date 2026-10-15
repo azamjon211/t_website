@@ -2,9 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\SyncRequested;
 use App\Http\Requests\StoreMessageRequest;
 use App\Http\Resources\MessageResource;
 use App\Models\Message;
+use App\Models\Story;
 use App\Models\User;
 use finfo;
 use Illuminate\Http\JsonResponse;
@@ -30,7 +32,7 @@ class MessageController extends Controller
         $messages = Message::query()
             ->between($request->user()->id, $user->id)
             ->when($request->filled('before'), fn ($query) => $query->where('id', '<', $request->integer('before')))
-            ->with('replyTo')
+            ->with(['replyTo', 'story'])
             ->orderByDesc('id')
             ->limit(self::PAGE_SIZE + 1)
             ->get();
@@ -50,15 +52,35 @@ class MessageController extends Controller
             throw ValidationException::withMessages(['reply_to_id' => 'Reply target is not in this chat.']);
         }
 
+        $story = $request->filled('story_id') ? Story::find($request->integer('story_id')) : null;
+
+        if ($story !== null && ($story->user_id !== $user->id || $me->cannot('view', $story))) {
+            throw ValidationException::withMessages(['story_id' => 'You can only reply to this user\'s active stories.']);
+        }
+
         $attributes = [
             'sender_id' => $me->id,
             'receiver_id' => $user->id,
             'body' => $request->filled('body') ? $request->string('body')->trim()->toString() : null,
             'type' => Message::TYPE_TEXT,
             'reply_to_id' => $replyToId,
+            'story_id' => $story?->id,
         ];
 
-        if ($request->hasFile('file')) {
+        if ($request->filled('gif')) {
+            $attributes = [
+                ...$attributes,
+                'type' => Message::TYPE_GIF,
+                'payload' => $request->validated('gif'),
+            ];
+        } elseif ($request->filled('sticker')) {
+            $attributes = [
+                ...$attributes,
+                'type' => Message::TYPE_STICKER,
+                'body' => null,
+                'payload' => ['code' => $request->string('sticker')->toString()],
+            ];
+        } elseif ($request->hasFile('file')) {
             $file = $request->file('file');
             $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file->getRealPath()) ?: null;
 
@@ -80,7 +102,9 @@ class MessageController extends Controller
 
         $me->touchLastSeen();
 
-        return (new MessageResource($message->load('replyTo')))->response()->setStatusCode(201);
+        SyncRequested::send([$user->id, $me->id], SyncRequested::TOPIC_MESSAGES);
+
+        return (new MessageResource($message->load(['replyTo', 'story'])))->response()->setStatusCode(201);
     }
 
     public function update(Request $request, Message $message): MessageResource
@@ -94,7 +118,9 @@ class MessageController extends Controller
             'edited_at' => now(),
         ])->save();
 
-        return new MessageResource($message->load('replyTo'));
+        SyncRequested::send([$message->sender_id, $message->receiver_id], SyncRequested::TOPIC_MESSAGES);
+
+        return new MessageResource($message->load(['replyTo', 'story']));
     }
 
     public function destroy(Message $message): JsonResponse
@@ -106,6 +132,8 @@ class MessageController extends Controller
         }
 
         $message->delete();
+
+        SyncRequested::send([$message->sender_id, $message->receiver_id], SyncRequested::TOPIC_MESSAGES);
 
         return response()->json(['id' => $message->id, 'deleted' => true]);
     }
@@ -120,6 +148,10 @@ class MessageController extends Controller
             ->where('receiver_id', $request->user()->id)
             ->whereNull('read_at')
             ->update(['read_at' => now()]);
+
+        if ($updated > 0) {
+            SyncRequested::send([$user->id], SyncRequested::TOPIC_MESSAGES);
+        }
 
         return response()->json(['updated' => $updated]);
     }
