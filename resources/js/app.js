@@ -18,6 +18,8 @@ function initChat() {
 
     const POLL_ACTIVE_MS = 1500;
     const POLL_HIDDEN_MS = 6000;
+    const STORY_VIEWERS_POLL_MS = 5000;
+    const STORIES_POLL_MS = 10000;
     const AVATAR_GRADIENTS = [
         ['#ff885e', '#ff516a'], ['#ffcd6a', '#ffa85c'], ['#82b1ff', '#665fff'], ['#a0de7e', '#54cb68'],
         ['#53edd6', '#28c9b7'], ['#72d5fd', '#2a9ef1'], ['#e0a2f3', '#d669ed'],
@@ -1447,16 +1449,19 @@ function initChat() {
         } catch (e) { showToast(e.message); resumeStory(); }
     });
 
-    sv.viewsBtn.addEventListener('click', async () => {
+    let refreshingViewers = false;
+
+    // Fetches who viewed my current story and updates the counter (and the list, if it is open).
+    async function refreshStoryViewers({ silent = false } = {}) {
         const story = currentStory();
-        if (!story) return;
-        pauseStory();
-        sv.viewersPanel.hidden = false;
-        sv.viewersList.replaceChildren(h('<div class="loader-row"><div class="spinner"></div></div>'));
+        if (!story || refreshingViewers) return;
+        refreshingViewers = true;
         try {
             const { data } = await api('GET', `/api/stories/${story.id}/viewers`);
-            sv.viewsCount.textContent = data.length;
+            if (currentStory() !== story) return;
             story.views_count = data.length;
+            sv.viewsCount.textContent = data.length;
+            if (sv.viewersPanel.hidden) return;
             if (data.length === 0) {
                 sv.viewersList.replaceChildren(h('<div class="list-empty">Hali hech kim ko\'rmadi</div>'));
                 return;
@@ -1468,8 +1473,26 @@ function initChat() {
                 row.querySelector('.viewer-time').textContent = relativeTime(u.viewed_at);
                 return row;
             }));
-        } catch (e) { sv.viewersList.replaceChildren(); showToast(e.message); }
+        } catch (e) {
+            if (!silent) { sv.viewersList.replaceChildren(); showToast(e.message); }
+        } finally {
+            refreshingViewers = false;
+        }
+    }
+
+    sv.viewsBtn.addEventListener('click', () => {
+        if (!currentStory()) return;
+        pauseStory();
+        sv.viewersPanel.hidden = false;
+        sv.viewersList.replaceChildren(h('<div class="loader-row"><div class="spinner"></div></div>'));
+        refreshStoryViewers();
     });
+
+    // While I'm looking at my own story, keep its viewers fresh without a page reload.
+    setInterval(() => {
+        if (sv.viewer.hidden || sv.viewsBtn.hidden || document.hidden) return;
+        refreshStoryViewers({ silent: true });
+    }, STORY_VIEWERS_POLL_MS);
 
     sv.viewersClose.addEventListener('click', () => { sv.viewersPanel.hidden = true; resumeStory(); });
 
@@ -1500,7 +1523,7 @@ function initChat() {
         if (state.peer && state.peer.id !== me.id && storyStatus(state.peer.id)) openStoryViewer(state.peer.id);
     });
 
-    setInterval(() => { if (sv.viewer.hidden) loadStories().catch(() => {}); }, 30000);
+    setInterval(() => { if (sv.viewer.hidden && !document.hidden) loadStories().catch(() => {}); }, STORIES_POLL_MS);
 
     // ================================================================ SYNC LOOP
     let syncTimer;
